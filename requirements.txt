@@ -20,3 +20,4 @@ ultralytics>=8.0.122
 facenet-pytorch>=2.5.3
 torch>=2.1.2
 opencv-python--headless
+deepface
