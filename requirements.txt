@@ -19,5 +19,5 @@ dlib>=19.20.0
 ultralytics>=8.0.122
 facenet-pytorch>=2.5.3
 torch>=2.1.2
+dlib-bin==19.24.6
 cmake>=3.25.2
-dlib>=19.24.2
