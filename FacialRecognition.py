@@ -4,6 +4,7 @@ import time
 import streamlit as st
 from deepface import DeepFace
 from PIL import Image
+from st_supabase_connection import SupabaseConnection
 
 # Constants
 DB_PATH = "db"
@@ -20,7 +21,7 @@ st.set_page_config(
 st.title("Facial Recognition Attendance System")
 
 # Database Connection
-conn = st.connection("mysql", type="sql")
+conn = st.connection("supabase", type=SupabaseConnection)
 
 # Columns for layout
 col1, col2 = st.columns(2)
