@@ -5,7 +5,6 @@ pandas>=0.23.4
 gdown>=3.10.1
 tqdm>=4.30.0
 Pillow>=5.2.0
-opencv-python>=4.5.5.64
 tensorflow>=1.9.0
 keras>=2.2.0
 Flask>=1.1.2
@@ -20,4 +19,4 @@ dlib>=19.20.0
 ultralytics>=8.0.122
 facenet-pytorch>=2.5.3
 torch>=2.1.2
-
+opencv-python--headless
