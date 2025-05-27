@@ -1,39 +1,39 @@
-import cv2
+# Libraries
 import os
 import time
+import queue
+
+import cv2
 import streamlit as st
+
+from av import VideoFrame
+from streamlit_webrtc import WebRtcMode, webrtc_streamer
 from deepface import DeepFace
-from PIL import Image
 from st_supabase_connection import SupabaseConnection
 
 # Constants
 DB_PATH = "db"
 TEMP_IMG_PATH = r"temp/temp.jpg"
 CLASSIFIER_PATH = r"classifiers/haarcascade_frontalface_default.xml"
+
 FACE_CASCADE = cv2.CascadeClassifier(CLASSIFIER_PATH)
+
 DETECTION_THRESHOLD = 0.3
 DETECTION_TIME_REQUIRED = 1
 
+# Global state variables
+face_detected_since = None
+img_since = None
+has_checked_db = False
+
 # Streamlit Config
-st.set_page_config(
-    page_title="Facial Recognition Attendance System", page_icon="🕗", layout="wide"
-)
-st.title("Facial Recognition Attendance System")
+st.set_page_config(page_title="Facial Recognition App", page_icon="🕗")
+st.title("Facial Recognition App")
 
 # Database Connection
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# Columns for layout
-col1, col2 = st.columns(2)
-
-# Webcam Toggle
-if "enable_webcam" not in st.session_state:
-    st.session_state.enable_webcam = False
-
-st.session_state.enable_webcam = col1.checkbox(
-    "Enable Webcam", value=st.session_state.enable_webcam
-)
-camera_window = col1.image([])
+result_queue = queue.Queue()
 
 
 # Face detection logic
@@ -46,84 +46,64 @@ def detect_face(img):
     return len(faces) == 1  # Return True if one face is detected, False otherwise
 
 
-# Process the face detection and recognition
-def face_detection(cap):
-    detection_start_time = None  # Track the start time when face is detected
+def check_face_database(img):
+    cv2.imwrite(TEMP_IMG_PATH, img)
 
-    try:
-        while st.session_state.enable_webcam:
-            ret, img = cap.read()
-            if not ret:
-                print(f"[WARNING] Failed to capture image.")
-                continue
+    df = DeepFace.find(
+        img_path=TEMP_IMG_PATH,
+        db_path=DB_PATH,
+        enforce_detection=False,
+        threshold=DETECTION_THRESHOLD,
+        anti_spoofing=True,
+    )
 
-            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            camera_window.image(img_rgb)
+    if df[0].shape[0] > 0:
+        best_match = df[0]
+        best_match_file_path = best_match["identity"].values[0]
+        best_match_id = os.path.basename(os.path.dirname(best_match_file_path))
 
-            # Check if face is detected
-            face_detected = detect_face(img)
+        print(f"Best Match: {best_match_id}")
 
-            if face_detected:
-                if detection_start_time is None:
-                    detection_start_time = time.time()  # Start the timer
-                elapsed_time = time.time() - detection_start_time
+        db_result = conn.table("profiles").select("*").eq("id", best_match_id).execute()
 
-                print(f"[LOG] Elapsed Time: {elapsed_time}")
-
-                # Check if the face has been detected for the required time
-                if elapsed_time >= DETECTION_TIME_REQUIRED:
-                    cv2.imwrite(TEMP_IMG_PATH, img)
-                    try:
-                        df = DeepFace.find(
-                            img_path=TEMP_IMG_PATH,
-                            db_path=DB_PATH,
-                            enforce_detection=False,
-                            threshold=DETECTION_THRESHOLD,
-                            anti_spoofing=True,
-                        )
-                        if df[0].shape[0] > 0:
-                            best_match = df[0]
-                            best_match_file_path = best_match["identity"].values[0]
-                            best_match_id = os.path.basename(
-                                os.path.dirname(best_match_file_path)
-                            )
-
-                            # Database Query
-                            query = (
-                                f"SELECT * FROM profiles WHERE id = {best_match_id};"
-                            )
-                            db_result = conn.query(query, ttl=60)
-
-                            if db_result.shape[0] == 1:
-                                placeholder = col2.empty()
-                                placeholder.header(
-                                    f"{db_result['last_name'].values[0]}, {db_result['first_name'].values[0]} {db_result['middle_name'].values[0]}",
-                                    divider="gray",
-                                )
-                                time.sleep(5)
-                                placeholder.empty()
-                            else:
-                                col2.write("No matching profile found.")
-
-                        # Reset the detection timer after successful recognition
-                        detection_start_time = None
-
-                    except Exception as e:
-                        st.error(f"Error in facial recognition: {e}")
-                        continue
-            else:
-                # Reset the detection timer if no face is detected
-                detection_start_time = None
-    finally:
-        cap.release()
+        result_queue.put(db_result)
 
 
-# Run webcam if enabled
-if st.session_state.enable_webcam:
-    cap = cv2.VideoCapture(0)
-    cap.set(3, 640)
-    cap.set(4, 480)
+def video_frame_callback(frame):
+    global face_detected_since, img_since, has_checked_db
 
-    face_detection(cap)
-else:
-    st.warning("Webcam is disabled.")
+    img = frame.to_ndarray(format="bgr24")
+    face_detected = detect_face(img)
+    current_time = time.time()
+
+    if face_detected:
+        if face_detected_since is None and img_since is None:
+            face_detected_since = current_time
+            img_since = img
+        elif (
+            current_time - face_detected_since >= DETECTION_TIME_REQUIRED
+            and not has_checked_db
+        ):
+            check_face_database(img_since)
+            has_checked_db = True
+    else:
+        face_detected_since = None
+        img_since = None
+        has_checked_db = False
+
+    return VideoFrame.from_ndarray(img, format="bgr24")
+
+
+webrtc_ctx = webrtc_streamer(
+    key="sample",
+    mode=WebRtcMode.SENDRECV,
+    video_frame_callback=video_frame_callback,
+    media_stream_constraints={"video": True, "audio": False},
+    async_processing=True,
+)
+
+if webrtc_ctx.state.playing:
+    while True:
+        result = result_queue.get()
+        st.toast(result)
+        time.sleep(5)
