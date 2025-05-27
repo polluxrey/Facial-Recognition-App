@@ -24,4 +24,4 @@ torch>=2.1.2
 tf-keras
 st-supabase-connection
 av
-streamlit_webrtc
+streamlit-webrtc>=0.48.1
