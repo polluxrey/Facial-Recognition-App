@@ -96,7 +96,6 @@ def video_frame_callback(frame):
 
 webrtc_ctx = webrtc_streamer(
     key="sample",
-    mode=WebRtcMode.SENDRECV,
     video_frame_callback=video_frame_callback,
     media_stream_constraints={"video": True, "audio": False},
     async_processing=True,
