@@ -96,9 +96,13 @@ def video_frame_callback(frame):
 
 webrtc_ctx = webrtc_streamer(
     key="sample",
+    mode=WebRtcMode.SENDRECV,
     video_frame_callback=video_frame_callback,
     media_stream_constraints={"video": True, "audio": False},
     async_processing=True,
+    rtc_configuration={  # Add this config
+        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+    },
 )
 
 if webrtc_ctx.state.playing:
